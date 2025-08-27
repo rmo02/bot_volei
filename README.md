@@ -70,4 +70,4 @@ Para usar um comando, mencione o bot no grupo seguido do comando. Ex: `@NomeDoBo
     -   `funHandler.js`: Lida com as interações divertidas.
 -   `src/state/`: Gerencia o estado do jogo (listas de jogadores).
 -   `src/config/`: Configurações gerais, como o número máximo de jogadores.
--   `.env`: Arquivo para guardar suas chaves de API (não deve ser enviado para o GitHub).
+-   `.env`: Arquivo para guardar suas chaves de API.
