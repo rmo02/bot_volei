@@ -1,13 +1,10 @@
-const GameState = require('../state/gameState');
-const { MAX_PLAYERS_MAIN_LIST } = require('../config/index');
-const { handleFunCommands } = require('./funHandler');
-const { lulaGaffes } = require('../assets/quotes');
+const GameState = require("../state/gameState");
+const { MAX_PLAYERS_MAIN_LIST, ADMIN_NUMBERS } = require("../config/index");
+const { handleFunCommands } = require("./funHandler");
 
-// Função auxiliar para formatar a lista de jogadores
+// 🔄 ALTERADO: Mostra o status de pagamento
 const formatPlayerList = () => {
     const { mainList, waitingList } = GameState.getState();
- 
-    // Cabeçalho fixo com detalhes do jogo
     let header = `*🏐 Vôlei de Terça 🏐*\n\n`;
     header += `*Horário:* 20h - 22h\n`;
     header += `*Local:* T9 Beach\n`;
@@ -15,123 +12,159 @@ const formatPlayerList = () => {
     header += `*Valor:* R$ 13,34 por pessoa (para 24 jogadores)\n`;
     header += `*Pix:* \`rmo02segundo@gmail.com\` (copie e cole)\n\n`;
     header += `-----------------------------\n\n`;
- 
+
     if (mainList.length === 0 && waitingList.length === 0) {
-        return header + 'A lista de presença está vazia! Ninguém confirmou ainda. 🤔';
+        return header + "A lista de presença está vazia! 🤔";
     }
- 
-    let response = header + `*Lista para o Vôlei (${mainList.length}/${MAX_PLAYERS_MAIN_LIST}) 🏐*\n\n`;
+
+    let response = header + `*Lista (${mainList.length}/${MAX_PLAYERS_MAIN_LIST}) 🏐*\n\n`;
     response += "*--- Confirmados ---*\n";
     mainList.forEach((p, i) => {
-        response += `${i + 1}. ${p.name} ${p.paid ? '💰' : ''}\n`;
+        let status = p.paid ? "💰" : p.paymentPending ? "⏳" : "";
+        response += `${i + 1}. ${p.name} ${status}\n`;
     });
- 
+
     if (waitingList.length > 0) {
         response += "\n*--- Lista de Espera ---*\n";
         waitingList.forEach((p, i) => {
-            response += `${i + 1}. ${p.name} ${p.paid ? '💰' : ''}\n`;
+            let status = p.paid ? "💰" : p.paymentPending ? "⏳" : "";
+            response += `${i + 1}. ${p.name} ${status}\n`;
         });
     }
+
     return response;
 };
 
-// Função principal que processa todas as mensagens
 const handleMessage = async (message, client) => {
-    if (message.from === 'status@broadcast') return;
+    try {
+        if (message.from === "status@broadcast") return;
+        const chat = await message.getChat();
+        if (!chat.isGroup) return;
 
-    const chat = await message.getChat();
-    if (!chat.isGroup) return; // Ignora mensagens privadas por enquanto; Comenta se quiser que o bot funcione em DMs
+        const isFunCommandHandled = await handleFunCommands(message);
+        if (isFunCommandHandled) return;
 
-    // A função handleFunCommands vai rodar em TODAS as mensagens do grupo.
-    const isFunCommandHandled = await handleFunCommands(message);
-    if (isFunCommandHandled) {
-        // Se a mensagem foi uma interação divertida (ex: "bom dia"), o bot responde e para por aqui.
-        return; 
-    }
+        if (!message.mentionedIds.includes(client.info.wid._serialized) && !message.fromMe) return;
 
-    // Agora, para os comandos sérios, verifica se o bot foi mencionado ou se a msg é do dono
-    if (!message.mentionedIds.includes(client.info.wid._serialized) && !message.fromMe) return;
+        const sender = await message.getContact();
+        const senderId = sender.id.user;
+        const senderName = sender.pushname || sender.name;
+        const botNumber = client.info.wid.user;
+        let content = message.body.toLowerCase().replace(`@${botNumber}`, "").trim();
 
-    const sender = await message.getContact();
-    const senderId = sender.id.user;
-    const senderName = sender.pushname || sender.name;
-    
-    const botNumber = client.info.wid.user;
-    let content = message.body.toLowerCase().replace(`@${botNumber}`, '').trim();
+        // --- Roteamento ---
+        if (content.startsWith("ajuda")) {
+            await message.reply(`*Comandos do Bot de Vôlei* 🏐
 
-    console.log(`[Comando Recebido] De: ${senderName} | Grupo: ${chat.name} | Mensagem: ${content}`);
-    
-    // --- Roteamento de Comandos ---
-    
-    if (content.startsWith('ajuda') || content.startsWith('comandos')) {
-        const ajudaMsg = `*Comandos do Bot de Vôlei* 🏐\n\n*!eu vou* - Adiciona seu nome à lista.\n\n*!nao vou* - Remove seu nome da lista.\n\n*!paguei* - Confirma o pagamento da sua cota.\n\n*!lista* - Mostra quem já confirmou.\n\n*!sortear [N]* - Sorteia N times. Ex: *!sortear 2*\n\n*!faz o l* - ???\n\n*!idgrupo* - Mostra o ID deste grupo.`;
-        await message.reply(ajudaMsg);
-    }
-    
-    else if (content.startsWith('eu vou') || content.startsWith('vou')) {
-        const result = GameState.addPlayer({ id: senderId, name: senderName, paid: false });
-        await message.reply(result.message);
-    }
+*eu vou* - Entra na lista.
+*nao vou* - Sai da lista.
+*paguei* - Marca pagamento como pendente.
+*lista* - Mostra a lista.
 
-    else if (content.startsWith('nao vou') || content.startsWith('não vou')) {
-        const result = GameState.removePlayer(senderId);
-        if (result.success) {
-            let replyMsg = `${senderName}, seu nome foi removido.`;
-            // Anuncia o jogador promovido
-            if (result.promotedPlayer) {
-                replyMsg += `\n\n🎉 *Promoção!* ${result.promotedPlayer.name} saiu da espera e entrou na lista principal!`;
+👤 *Convidados:*
+*convidado [nome]*
+*remover convidado [nome]*
+*pagou convidado [nome]*
+
+👑 *Admin:*
+*confirmar pagamento [nome ou @pessoa]*
+
+🎲 *Outros:*
+*sortear [N]*
+*idgrupo*`);
+        } else if (content.startsWith("eu vou")) {
+            const result = GameState.addPlayer({
+                id: senderId,
+                name: senderName,
+                paid: false,
+                paymentPending: false,
+                isGuest: false,
+            });
+            await message.reply(result.message);
+
+        } else if (content.startsWith("nao vou")) {
+            const result = GameState.removePlayer(senderId);
+            let replyMsg = result.success ? `${senderName}, você saiu da lista.` : `${senderName}, você não estava na lista.`;
+            if (result.promotedPlayer) replyMsg += `\n🎉 ${result.promotedPlayer.name} entrou na lista principal!`;
+            await message.reply(replyMsg);
+
+        } else if (content.startsWith("paguei")) {
+            const result = GameState.confirmPayment(senderId);
+            await message.reply(result.message);
+
+        } else if (content.startsWith("convidado")) {
+            const guestName = content.substring("convidado".length).trim();
+            if (!guestName) return message.reply("📝 Use: *@Bot convidado [Nome]*");
+            const guest = {
+                id: `guest_${guestName.toLowerCase()}`,
+                name: `${guestName} (Convidado de ${senderName})`,
+                paid: false,
+                paymentPending: false,
+                isGuest: true,
+            };
+            const result = GameState.addPlayer(guest);
+            await message.reply(result.message);
+
+        } else if (content.startsWith("remover convidado")) {
+            const guestName = content.substring("remover convidado".length).trim();
+            const result = GameState.removePlayer(guestName);
+            let replyMsg = result.success ? `Convidado "${guestName}" removido.` : `Convidado "${guestName}" não encontrado.`;
+            if (result.promotedPlayer) replyMsg += `\n🎉 ${result.promotedPlayer.name} entrou na lista principal!`;
+            await message.reply(replyMsg);
+
+        } else if (content.startsWith("pagou convidado")) {
+            const guestName = content.substring("pagou convidado".length).trim();
+            const result = GameState.confirmPayment(`guest_${guestName.toLowerCase()}`);
+            await message.reply(result.message);
+
+        // ⭐️ NOVO: Admin confirmar pagamento por @ ou nome
+        } else if (content.startsWith("confirmar pagamento")) {
+            if (!ADMIN_NUMBERS.includes(senderId)) {
+                return message.reply("Sem permissão.");
             }
-            await client.sendMessage(message.from, replyMsg);
-        } else {
-            await message.reply(`${senderName}, seu nome não estava em nenhuma lista.`);
+
+            let playerIdOrName = content.substring("confirmar pagamento".length).trim();
+
+            // 🔄 Se admin mencionou alguém, pega o ID real do jogador
+            if (message.mentionedIds.length > 0) {
+                const mentioned = message.mentionedIds.find(id => id !== client.info.wid._serialized);
+                if (mentioned) {
+                    playerIdOrName = mentioned.split("@")[0]; // pega só o número
+                }
+            }
+
+            if (!playerIdOrName) {
+                return message.reply("Use: *@Bot confirmar pagamento [Nome ou @pessoa]*");
+            }
+
+            const result = GameState.adminConfirmPayment(playerIdOrName);
+            await message.reply(result.message);
+
+        } else if (content.startsWith("lista")) {
+            await message.reply(formatPlayerList());
+
+        } else if (content.startsWith("sortear")) {
+            const numTimes = parseInt(content.split(" ")[1]);
+            if (isNaN(numTimes) || numTimes < 2) {
+                return message.reply("Use: *sortear [número]*. Ex: *sortear 2*");
+            }
+            const { mainList } = GameState.getState();
+            if (mainList.length < numTimes) {
+                return message.reply(`Não há jogadores suficientes para ${numTimes} times.`);
+            }
+            let jogadores = [...mainList].sort(() => Math.random() - 0.5);
+            const times = Array.from({ length: numTimes }, () => []);
+            jogadores.forEach((j, i) => times[i % numTimes].push(j.name));
+            let msg = "🔥*TIMES SORTEADOS!* 🔥\n\n";
+            times.forEach((t, i) => msg += `*Time ${i + 1}:*\n${t.map(n => `- ${n}`).join("\n")}\n\n`);
+            await message.reply(msg);
+
+        } else if (content.startsWith("idgrupo")) {
+            await message.reply(`ID do grupo: ${chat.id._serialized}`);
         }
-    }
-    
-    else if (content.startsWith('paguei') || content.startsWith('pago')) {
-        const result = GameState.confirmPayment(senderId);
-        await message.reply(result.message);
-    }
-
-    else if (content.startsWith('lista')) {
-        await message.reply(formatPlayerList());
-    }
-
-    else if (content.startsWith('sortear')) {
-        const numTimes = parseInt(content.split(' ')[1]);
-        if (isNaN(numTimes) || numTimes < 2) {
-            await message.reply('Comando inválido! Use: *!sortear [número]*. Ex: *!sortear 2*');
-            return;
-        }
-
-        const { mainList } = GameState.getState();
-        if (mainList.length < numTimes) {
-            await message.reply(`Não há jogadores confirmados suficientes para formar ${numTimes} times!`);
-            return;
-        }
-
-        let jogadores = [...mainList].sort(() => Math.random() - 0.5);
-        const times = Array.from({ length: numTimes }, () => []);
-        jogadores.forEach((jogador, i) => times[i % numTimes].push(jogador.name));
-
-        let sorteioMsg = '🔥 *TIMES SORTEADOS!* 🔥\n\n';
-        times.forEach((time, i) => {
-            sorteioMsg += `*Time ${i + 1}:*\n` + time.map(nome => `- ${nome}`).join('\n') + '\n\n';
-        });
-        await client.sendMessage(message.from, sorteioMsg);
-    }
-
-    // <-- 2. NOVO COMANDO ADICIONADO AQUI -->
-    else if (content.startsWith('faz o l')) {
-        // Escolhe uma frase aleatória da lista que esta em assets/quotes.js
-        const randomIndex = Math.floor(Math.random() * lulaGaffes.length);
-        const randomGaffe = lulaGaffes[randomIndex];
-        
-        const replyMessage = `Opa, lá vem pérola:\n\n*${randomGaffe}*`;
-        await message.reply(replyMessage);
-    }
-    
-    else if (content.startsWith('idgrupo')) {
-        await message.reply(`O ID deste grupo é: \n${chat.id._serialized}`);
+    } catch (err) {
+        console.error("❌ Erro no handleMessage:", err);
+        await message.reply("⚠️ Ocorreu um erro, tente novamente.");
     }
 };
 
