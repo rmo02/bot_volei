@@ -5,6 +5,8 @@ module.exports = {
     // Descubra o ID enviando "!idgrupo" no grupo com o bot rodando.
     GROUP_ID: process.env.GROUP_ID,
 
+    ADMIN_NUMBERS: ['559884324158'],
+
     // Limites de jogadores, carregados do arquivo .env
     MAX_PLAYERS_MAIN_LIST: parseInt(process.env.MAX_PLAYERS_MAIN_LIST, 10) || 24,
     MAX_PLAYERS_WAITING_LIST: parseInt(process.env.MAX_PLAYERS_WAITING_LIST, 10) || 5,
